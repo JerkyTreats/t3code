@@ -33,3 +33,18 @@ An agent can put a page on the canvas whose data it keeps updating, such as a bo
 ## Cite something on the canvas
 
 Right-click a shape, note or card and choose **Cite** at the top of the menu. The composer gets a citation of it, quoting its text, its label or the card's name, and you can add a comment. Clicking the citation later pans the canvas back to it.
+
+## Workspace canvases
+
+A workspace canvas is a canvas of its own that belongs to a project rather than to one thread. It has no turns down the middle: it is open space where any number of chats sit as **chat pins** beside files, terminals, browser tabs, notes, drawings and live pages.
+
+- **Create one.** Use **+** beside **Canvases** at the top of the sidebar, or right-click a project and choose **New canvas**. With several projects in view, **+** asks which project the canvas belongs to. A new canvas is named after its project; click its title at the top of the canvas to rename it.
+- **Rename or delete one.** Right-click a canvas in the sidebar, or use its **…** button, which also works on touch screens. Deleting a canvas removes the board and closes the terminals and browser tabs opened on it. The chats pinned to it are kept as ordinary threads. Deleting a project also deletes its canvases.
+- **Add chats.** **New chat** at the top of the canvas, **New chat** from a right-click on empty space, or **+** beside **Pinned Chats** in the sidebar starts a chat on the canvas. Right-click any thread in the sidebar and choose **Place on canvas** to pin an existing chat. Each chat works on its own, hears the notes and drawings nearest its pin, and draws beside its pin.
+- **Focus a chat.** Click a chat pin, or its entry in the sidebar, to focus it. The focused pin has a ring in its chat's colour, and **Cite** on anything on the canvas quotes into that chat. Until you pick one, the first pin is focused.
+- **Frames.** **Frame** at the top of the canvas, **New frame** from a right-click, or **+** beside **Frames** in the sidebar adds a named zone. Rename a frame from its label on the canvas.
+- **Find your way.** While a canvas is open, the sidebar lists its pinned chats, each with its colour and whether it is working, waiting or idle, and its frames. Click a chat to glide to its pin, or a frame to fit the view to it. **Zoom to fit** shows everything on the canvas.
+
+A pinned chat's diffs open as a diff card beside it, and running a command from one of its replies opens a terminal card beside it. A diff card on a workspace canvas shows the focused chat's changes.
+
+Workspace canvases are available on web and desktop. A server that does not support them shows none, and opening a canvas link there says canvases are unavailable.

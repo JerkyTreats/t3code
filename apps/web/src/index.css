@@ -2777,6 +2777,12 @@ code {
   pointer-events: none;
 }
 
+/* The focused chat pin on a workspace canvas, which Cite quotes into, ringed in its chat's colour. */
+.canvas-card[data-canvas-chat-focused="true"] {
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--canvas-chat-color, var(--primary)) 65%, transparent);
+}
+
 /* An agent's cursor and outlines while it draws; removed once they fade. */
 .canvas-agent-presence {
   position: absolute;

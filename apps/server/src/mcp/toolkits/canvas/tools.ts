@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
+import * as WorkspaceCanvasStore from "../../../canvas/WorkspaceCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -180,6 +181,7 @@ const CanvasUpdateTool = Tool.make("canvas_update", {
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
     ThreadCanvasStore.ThreadCanvasStore,
+    WorkspaceCanvasStore.WorkspaceCanvasStore,
     HtmlRender.HtmlRender,
   ],
 })

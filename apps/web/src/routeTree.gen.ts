@@ -53,6 +53,7 @@ import { Route as ChatSettingsAccessRouteImport } from './routes/_chat.settings.
 import { Route as ChatSettingsAboutRouteImport } from './routes/_chat.settings.about'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as ChatCanvasEnvironmentIdCanvasIdRouteImport } from './routes/_chat.canvas.$environmentId.$canvasId'
 import { Route as ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRouteImport } from './routes/_chat.linked.$viaEnvironmentId.$linkedEnvironmentId.$linkedThreadId'
 
 const WelcomeRoute = WelcomeRouteImport.update({
@@ -280,6 +281,12 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
+const ChatCanvasEnvironmentIdCanvasIdRoute =
+  ChatCanvasEnvironmentIdCanvasIdRouteImport.update({
+    id: '/canvas/$environmentId/$canvasId',
+    path: '/canvas/$environmentId/$canvasId',
+    getParentRoute: () => ChatRoute,
+  } as any)
 const ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute =
   ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRouteImport.update(
     {
@@ -333,6 +340,7 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/canvas/$environmentId/$canvasId': typeof ChatCanvasEnvironmentIdCanvasIdRoute
   '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRoutesByTo {
@@ -379,6 +387,7 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/canvas/$environmentId/$canvasId': typeof ChatCanvasEnvironmentIdCanvasIdRoute
   '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRoutesById {
@@ -427,6 +436,7 @@ export interface FileRoutesById {
   '/_chat/settings/voice': typeof ChatSettingsVoiceRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/_chat/canvas/$environmentId/$canvasId': typeof ChatCanvasEnvironmentIdCanvasIdRoute
   '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRouteTypes {
@@ -475,6 +485,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/canvas/$environmentId/$canvasId'
     | '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -521,6 +532,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/canvas/$environmentId/$canvasId'
     | '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   id:
     | '__root__'
@@ -568,6 +580,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/voice'
     | '/_chat/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/_chat/canvas/$environmentId/$canvasId'
     | '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   fileRoutesById: FileRoutesById
 }
@@ -893,6 +906,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/canvas/$environmentId/$canvasId': {
+      id: '/_chat/canvas/$environmentId/$canvasId'
+      path: '/canvas/$environmentId/$canvasId'
+      fullPath: '/canvas/$environmentId/$canvasId'
+      preLoaderRoute: typeof ChatCanvasEnvironmentIdCanvasIdRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': {
       id: '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
       path: '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
@@ -976,6 +996,7 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
+  ChatCanvasEnvironmentIdCanvasIdRoute: typeof ChatCanvasEnvironmentIdCanvasIdRoute
   ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute: typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 
@@ -988,6 +1009,7 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
+  ChatCanvasEnvironmentIdCanvasIdRoute: ChatCanvasEnvironmentIdCanvasIdRoute,
   ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute:
     ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute,
 }

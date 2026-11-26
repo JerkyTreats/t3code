@@ -7,6 +7,15 @@ import {
   ThreadCanvasSubscribeInput,
 } from "./threadCanvas.ts";
 import {
+  WorkspaceCanvasCreateInput,
+  WorkspaceCanvasDeleteInput,
+  WorkspaceCanvasError,
+  WorkspaceCanvasList,
+  WorkspaceCanvasRecord,
+  WorkspaceCanvasRenameInput,
+  WorkspaceCanvasSubscribeInput,
+} from "./workspaceCanvas.ts";
+import {
   PageStateDocument,
   PageStateError,
   PageStateSubscribeInput,
@@ -497,6 +506,10 @@ export const WS_METHODS = {
   threadCanvasSave: "threadCanvas.save",
   threadCanvasBrowserTrail: "threadCanvas.browserTrail",
   subscribeThreadCanvas: "subscribeThreadCanvas",
+  workspaceCanvasCreate: "workspaceCanvas.create",
+  workspaceCanvasRename: "workspaceCanvas.rename",
+  workspaceCanvasDelete: "workspaceCanvas.delete",
+  subscribeWorkspaceCanvases: "subscribeWorkspaceCanvases",
   pageStateWrite: "pageState.write",
   subscribePageState: "subscribePageState",
   agentSessionsScan: "agentSessions.scan",
@@ -1683,6 +1696,30 @@ const WsSubscribeThreadCanvasRpc = Rpc.make(WS_METHODS.subscribeThreadCanvas, {
   stream: true,
 });
 
+const WsWorkspaceCanvasCreateRpc = Rpc.make(WS_METHODS.workspaceCanvasCreate, {
+  payload: WorkspaceCanvasCreateInput,
+  success: WorkspaceCanvasRecord,
+  error: Schema.Union([WorkspaceCanvasError, EnvironmentAuthorizationError]),
+});
+
+const WsWorkspaceCanvasRenameRpc = Rpc.make(WS_METHODS.workspaceCanvasRename, {
+  payload: WorkspaceCanvasRenameInput,
+  success: WorkspaceCanvasRecord,
+  error: Schema.Union([WorkspaceCanvasError, EnvironmentAuthorizationError]),
+});
+
+const WsWorkspaceCanvasDeleteRpc = Rpc.make(WS_METHODS.workspaceCanvasDelete, {
+  payload: WorkspaceCanvasDeleteInput,
+  error: Schema.Union([WorkspaceCanvasError, EnvironmentAuthorizationError]),
+});
+
+const WsSubscribeWorkspaceCanvasesRpc = Rpc.make(WS_METHODS.subscribeWorkspaceCanvases, {
+  payload: WorkspaceCanvasSubscribeInput,
+  success: WorkspaceCanvasList,
+  error: Schema.Union([WorkspaceCanvasError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 const WsPageStateWriteRpc = Rpc.make(WS_METHODS.pageStateWrite, {
   payload: PageStateWriteInput,
   success: PageStateWriteResult,
@@ -2553,6 +2590,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsThreadCanvasSaveRpc,
   WsThreadCanvasBrowserTrailRpc,
   WsSubscribeThreadCanvasRpc,
+  WsWorkspaceCanvasCreateRpc,
+  WsWorkspaceCanvasRenameRpc,
+  WsWorkspaceCanvasDeleteRpc,
+  WsSubscribeWorkspaceCanvasesRpc,
   WsPageStateWriteRpc,
   WsSubscribePageStateRpc,
   WsAgentSessionsScanRpc,

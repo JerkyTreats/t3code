@@ -230,6 +230,7 @@ function makeHarness(options: HarnessOptions = {}) {
       snapshot: Effect.die("unused"),
       getShell: () => Effect.die("unused"),
       listShells: () => Effect.die("unused"),
+      subscribeDeletions: Effect.succeed(Stream.empty),
     }),
     Layer.mock(GitWorkflow.GitWorkflowService)({
       repositoryRoot: () => Effect.succeed(project.workspaceRoot),

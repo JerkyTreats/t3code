@@ -5,7 +5,12 @@ import {
   newElementWith,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import {
+  isWorkspaceCanvasId,
+  type EnvironmentId,
+  type ScopedThreadRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   type CanvasSurfaceCard,
   type CanvasSurfaceRef,
@@ -107,12 +112,17 @@ export function placeSurfaceCard(
   const spot = ((): { x: number; y: number; turn: Element | null } => {
     if (where !== undefined && "at" in where) return { ...where.at, turn: null };
     if (where !== undefined && "inView" in where) {
-      const spot = freeSpotInView(
-        [...solid, ...turnCorridorOf(turnSpineOf(turns))],
-        visibleSceneOf(api.getAppState()),
-        size,
-      );
+      const visible = visibleSceneOf(api.getAppState());
+      const spot = freeSpotInView([...solid, ...turnCorridorOf(turnSpineOf(turns))], visible, size);
       if (spot !== null) return { ...spot, turn: null };
+      if (turns.length === 0) {
+        const origin = {
+          x: visible.x + Math.max(0, (visible.width - size.width) / 2),
+          y: visible.y + Math.max(0, (visible.height - size.height) / 2),
+          ...size,
+        };
+        return { ...slideOut(solid, origin, 1), turn: null };
+      }
     }
     if (where !== undefined && "besideElement" in where) {
       const beside = scene.find((element) => element.id === where.besideElement);
@@ -154,11 +164,12 @@ export function placeSurfaceCard(
       },
     },
   ]);
-  if (element === undefined) return;
+  if (element === undefined) return null;
   api.updateScene({
     elements: [...api.getSceneElementsIncludingDeleted(), element],
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
+  return element.id;
 }
 
 /**
@@ -236,8 +247,11 @@ function usePullRequestAvailability(
 ): Availability {
   // The board's own thread arrives in the same snapshot as the projects, so until it does the
   // project list is not yet known; after it, a missing project is gone, not loading.
-  const known = useQuietThreadShell(threadRef) !== null;
   const projects = useProjects();
+  const known =
+    useQuietThreadShell(threadRef) !== null ||
+    (isWorkspaceCanvasId(threadRef.threadId) &&
+      projects.some((project) => project.environmentId === threadRef.environmentId));
   if (!known) return LOADING;
   return projects.some(
     (project) =>

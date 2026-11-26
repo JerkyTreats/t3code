@@ -1,11 +1,19 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  WorkspaceCanvasId,
+  workspaceCanvasThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
+import * as WorkspaceCanvasStore from "../canvas/WorkspaceCanvasStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -108,6 +116,12 @@ const layerTest = McpHttpServer.layerCanvasToolkit.pipe(
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provide(layerCanvasMock),
+  Layer.provide(
+    Layer.mock(WorkspaceCanvasStore.WorkspaceCanvasStore)({
+      get: () => Effect.succeed(null),
+      writeBoard: (_threadId, write) => write,
+    }),
+  ),
   Layer.provide(layerHtmlRenderMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-canvas-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
@@ -206,4 +220,134 @@ it.effect("keeps each copy of a busy board's canvas_read result within one tool 
       expect(structured).toContain("older marks are left out");
     }),
   ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("routes a peer chat pinned on a workspace canvas and resolves PR projectId", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workspaceCanvasId = WorkspaceCanvasId.make("canvas:ws-mcp-1");
+      const workspaceBoardThreadId = workspaceCanvasThreadId(workspaceCanvasId);
+      const workspaceProjectId = ProjectId.make("project-workspace-1");
+      const peerThreadId = ThreadId.make("thread-peer-mcp");
+      const wsDrawn: Array<Parameters<ThreadCanvasStore.ThreadCanvasStore["Service"]["draw"]>[0]> =
+        [];
+
+      const layerWorkspaceTest = McpHttpServer.layerCanvasToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
+            chatCardOf: (id) =>
+              Effect.succeed(
+                id === peerThreadId
+                  ? { canvasThreadId: workspaceBoardThreadId, card: "peer-card-1" }
+                  : null,
+              ),
+            draw: (input) => {
+              wsDrawn.push(input);
+              return Effect.succeed({
+                drawingId: input.drawingId,
+                placed: null,
+                crossings: 0,
+                arrowsThroughBoxes: [],
+                clippedLabels: [],
+                overlaps: [],
+                keptUserMoves: [],
+              });
+            },
+            deliverToAgent: () => Effect.succeed(ThreadCanvasStore.EMPTY_CANVAS_DELIVERY),
+            read: () =>
+              Effect.succeed({
+                revision: 1,
+                elements: [
+                  {
+                    id: "peer-card-1",
+                    type: "rectangle",
+                    x: 200,
+                    y: 100,
+                    width: 484,
+                    height: 624,
+                    customData: {
+                      t3Card: {
+                        kind: "surface",
+                        surface: { kind: "side-chat", threadId: peerThreadId },
+                        title: "Peer",
+                      },
+                    },
+                  },
+                ],
+              }),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(WorkspaceCanvasStore.WorkspaceCanvasStore)({
+            writeBoard: (_threadId, write) => write,
+            get: (id) =>
+              Effect.succeed(
+                id === workspaceCanvasId
+                  ? {
+                      id: workspaceCanvasId,
+                      projectId: workspaceProjectId,
+                      title: "Workspace Board",
+                      createdAt: "2026-11-26T00:00:00.000Z",
+                      updatedAt: "2026-11-26T00:00:00.000Z",
+                    }
+                  : null,
+              ),
+          }),
+        ),
+        Layer.provide(layerHtmlRenderMock),
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-ws-canvas-" })),
+        Layer.provide(NodeServices.layer),
+      );
+
+      yield* Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const caller = {
+          ...invocation,
+          thread: {
+            ...invocation.thread,
+            threadId: peerThreadId,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+        };
+        const readResult = yield* server
+          .callTool({ name: "canvas_read", arguments: {} })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        expect(readResult.isError).toBe(false);
+        expect(JSON.stringify(readResult.content)).toContain("workspace canvas");
+
+        const updateResult = yield* server
+          .callTool({
+            name: "canvas_update",
+            arguments: {
+              drawingId: "review",
+              shapes: [
+                {
+                  id: "pr",
+                  type: "card",
+                  card: { kind: "pull-request", repository: "acme/app", number: 42 },
+                },
+              ],
+            },
+          })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        expect(updateResult.isError).toBe(false);
+        expect(wsDrawn.at(-1)?.threadId).toBe(workspaceBoardThreadId);
+        expect(wsDrawn.at(-1)?.anchor).toBe("peer-card-1");
+        expect(wsDrawn.at(-1)?.shapes[0]?.card).toMatchObject({
+          kind: "pull-request",
+          projectId: workspaceProjectId,
+          repository: "acme/app",
+          number: 42,
+        });
+      }).pipe(Effect.provide(layerWorkspaceTest));
+    }),
+  ),
 );

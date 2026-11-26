@@ -22,8 +22,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
@@ -187,6 +190,11 @@ export class ProjectService extends Context.Service<
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
+    /**
+     * Subscribes, for the caller's scope, to each project whose deletion commits from then on,
+     * so state kept beside a project can go with it.
+     */
+    readonly subscribeDeletions: Effect.Effect<Stream.Stream<ProjectId>, never, Scope.Scope>;
   }
 >()("t3/project/ProjectService") {}
 
@@ -758,6 +766,8 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const deletedProjects = yield* PubSub.unbounded<ProjectId>();
+
   const deleteProject: ProjectService["Service"]["delete"] = Effect.fn("ProjectService.delete")(
     function* (input) {
       const { projectId } = input;
@@ -774,6 +784,7 @@ export const make = Effect.gen(function* () {
       yield* commit({ type: "project.delete", commandId: input.commandId, projectId });
       if (isFirstDelete) {
         yield* clearProjectSettingsOverrides(projectId);
+        yield* PubSub.publish(deletedProjects, projectId);
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);
@@ -855,6 +866,7 @@ export const make = Effect.gen(function* () {
     bootstrap,
     update,
     delete: deleteProject,
+    subscribeDeletions: PubSub.subscribe(deletedProjects).pipe(Effect.map(Stream.fromSubscription)),
     getById,
     getByWorkspaceRoot,
     workspaceScanDirectory,

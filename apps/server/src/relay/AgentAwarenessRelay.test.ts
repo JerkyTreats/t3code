@@ -332,6 +332,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
       getShell: unused,
       listShells: unused,
       getById: () => Effect.succeedSome(project),
+      subscribeDeletions: Effect.succeed(Stream.empty),
     }),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
     Effect.provide(NodeCrypto.layer),

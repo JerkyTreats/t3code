@@ -1,3 +1,4 @@
+import { isWorkspaceCanvasId } from "@t3tools/contracts";
 import { OrchestratorMcpFailure, type ThreadCanvasError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -14,6 +15,7 @@ import { canvasSurfaceRefOfSpec } from "@t3tools/shared/canvasSurfaceCard";
 import { canvasOf, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
+import * as WorkspaceCanvasStore from "../../../canvas/WorkspaceCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -149,7 +151,9 @@ const handlers = {
           width: Math.round(Number(card.width)),
           height: Math.round(Number(card.height)),
         },
-        note: `${read.note} You are a chat placed on this board as the card yourCard; the turns are another chat's. Your drawings land beside your card, and besideLatestTurn, belowLatestTurn and moveToLatestTurn mean beside or below your card.`,
+        note: isWorkspaceCanvasId(canvasThreadId)
+          ? `${read.note} You are a chat placed on this workspace canvas as the card yourCard. Your drawings land beside your card, and besideLatestTurn, belowLatestTurn and moveToLatestTurn mean beside or below your card.`
+          : `${read.note} You are a chat placed on this board as the card yourCard; the turns are another chat's. Your drawings land beside your card, and besideLatestTurn, belowLatestTurn and moveToLatestTurn mean beside or below your card.`,
       };
     }),
   ),
@@ -181,11 +185,20 @@ const handlers = {
                 }),
             });
       // A pull request card resolves through the project of the board it lands on.
-      const projectId = yield* ThreadManagementService.ThreadManagementService.pipe(
-        Effect.flatMap((threads) => threads.getThreadShell(canvasThreadId)),
-        Effect.map((shell) => shell?.projectId),
-        Effect.orElseSucceed(() => undefined),
-      );
+      const workspaceCanvases = yield* WorkspaceCanvasStore.WorkspaceCanvasStore;
+      const workspaceProjectId = isWorkspaceCanvasId(canvasThreadId)
+        ? yield* workspaceCanvases.get(canvasThreadId).pipe(
+            Effect.map((record) => record?.projectId),
+            Effect.orElseSucceed(() => undefined),
+          )
+        : undefined;
+      const projectId =
+        workspaceProjectId ??
+        (yield* ThreadManagementService.ThreadManagementService.pipe(
+          Effect.flatMap((threads) => threads.getThreadShell(canvasThreadId)),
+          Effect.map((shell) => shell?.projectId),
+          Effect.orElseSucceed(() => undefined),
+        ));
       const shapes = yield* Effect.forEach(diagram ?? input.shapes ?? [], (shape) => {
         if (shape.type === "card") {
           if (shape.card === undefined) {
@@ -230,17 +243,20 @@ const handlers = {
           ),
         );
       });
-      return yield* canvas
-        .draw({
-          ...input,
-          shapes,
-          patch: diagram === undefined && (input.patch ?? input.shapes === undefined),
-          arranged: diagram !== undefined,
-          threadId: canvasThreadId,
-          drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
-          anchor: target.card ?? undefined,
-          author: thread.threadId,
-        })
+      return yield* workspaceCanvases
+        .writeBoard(
+          canvasThreadId,
+          canvas.draw({
+            ...input,
+            shapes,
+            patch: diagram === undefined && (input.patch ?? input.shapes === undefined),
+            arranged: diagram !== undefined,
+            threadId: canvasThreadId,
+            drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
+            anchor: target.card ?? undefined,
+            author: thread.threadId,
+          }),
+        )
         .pipe(Effect.mapError(toFailure));
     }),
   ),

@@ -10,10 +10,11 @@ import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/co
 import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
 import { T, useGT } from "gt-react";
 import { Trash2Icon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { ComposerHandleContext } from "../../composerHandleContext";
+import type { ChatComposerHandle } from "./ChatComposer";
 import { useClientSettings } from "../../hooks/useSettings";
 import { releaseComposerDraftUploads } from "../../lib/composerDraftUploads";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
@@ -46,6 +47,7 @@ export default function SideThreadPane(props: {
   readonly parentRef: ScopedThreadRef;
   readonly surface: ThreadSurface;
   readonly parentPanel: SideChatParentPanel;
+  readonly composerHandleRef?: RefObject<ChatComposerHandle | null> | null | undefined;
   readonly onClose: () => void;
 }) {
   const { parentRef, surface } = props;
@@ -202,7 +204,7 @@ export default function SideThreadPane(props: {
         </p>
       ) : renderState === "loading" && thread === null ? null : (
         <BackgroundThreadContext value>
-          <ComposerHandleContext value={null}>
+          <ComposerHandleContext value={props.composerHandleRef ?? null}>
             <ChatView
               environmentId={parentRef.environmentId}
               threadId={threadId}

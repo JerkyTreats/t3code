@@ -1,4 +1,5 @@
 import { ThreadCanvasStore } from "../canvas/ThreadCanvasStore.ts";
+import { WorkspaceCanvasStore } from "../canvas/WorkspaceCanvasStore.ts";
 import { PageStateStore } from "../pageState/PageStateStore.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -64,6 +65,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(AssetSigner)({}),
   Layer.mock(DeviceService)({}),
   Layer.mock(ThreadCanvasStore)({}),
+  Layer.mock(WorkspaceCanvasStore)({}),
   Layer.mock(PageStateStore)({}),
   Layer.mock(DocumentText)({}),
   Layer.mock(EnvironmentThemeService)({}),

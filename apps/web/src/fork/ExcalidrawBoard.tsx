@@ -108,6 +108,14 @@ import {
   playAgentPresence,
 } from "./canvasChatPresence";
 import { BoardActivityStrip } from "./CanvasChatStatus";
+import {
+  extractCanvasAnchors,
+  nextDefaultName,
+  useCanvasAnchorsStore,
+  useFocusedChat,
+  type WorkspaceBoardActions,
+} from "./canvasAnchors";
+import { boardStorageKey, isDeletedBoard } from "./workspaceCanvasBoards";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { type SketchBox, sketchAreas, sketchFrame } from "./sketchAreas";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -128,7 +136,6 @@ declare global {
 }
 
 const DRAFT_STORAGE_KEY = "t3code:demo:draft-excalidraw-board";
-const TURN_STORAGE_PREFIX = "t3code:demo:turn-board:";
 const BOARD_SAVE_DELAY_MS = 400;
 const BOARD_PIECES: readonly BoardPiece[] = ["hero", "composer"];
 // T3's pieces sit inside their box, so its stroke and handles stay grabbable.
@@ -601,6 +608,28 @@ function placeCards(
 
 const sceneById = new WeakMap<object, ReadonlyMap<string, BoardElement>>();
 
+/** On a spineless workspace canvas, markdown cards still fit their height to their text. */
+function fitMarkdownCards(api: ExcalidrawImperativeAPI, layer: HTMLElement | null) {
+  if (!layer) return;
+  const fitted = fittedCardHeights(layer, TURN_INSET_PX);
+  if (fitted.size === 0) return;
+  const all = api.getSceneElementsIncludingDeleted();
+  let changed = false;
+  const next = all.map((element) => {
+    if (element.isDeleted) return element;
+    const height = fitted.get(element.id);
+    if (height === undefined) return element;
+    const grows = height - element.height >= 1;
+    const shrinks = element.height - height >= CARD_SHRINK_SLACK_PX;
+    if (!grows && !shrinks) return element;
+    changed = true;
+    return newElementWith(element, { height });
+  });
+  if (changed) {
+    api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.NEVER });
+  }
+}
+
 /**
  * Keeps each card in its element's box, inset like a turn, and each citation anchor over its
  * element, hiding the anchor once the element is gone. React renders a card but never places it,
@@ -689,6 +718,8 @@ export default function ExcalidrawBoard({
   storageId,
   turnBoard,
   canvasThread,
+  workspaceMode = false,
+  onBoardActions,
   renderPanelSurface,
   newSurfaces = [],
   onCite,
@@ -698,6 +729,13 @@ export default function ExcalidrawBoard({
   turnBoard: TurnBoard;
   /** The server thread whose canvas this board shows, once the thread exists there. */
   canvasThread: ThreadCanvasTarget | null;
+  /**
+   * Spineless workspace canvas: no vertical turn spine or turn-chasing camera. Its chats, frames
+   * and focused chat pin live in the canvas anchors store, which the sidebar also reads.
+   */
+  workspaceMode?: boolean | undefined;
+  /** Exposes camera jump, zoom-to-fit, and frame creation controls to workspace chrome. */
+  onBoardActions?: ((actions: WorkspaceBoardActions | null) => void) | undefined;
   /** Renders a right panel surface in a card, as the panel renders it. */
   renderPanelSurface?: RenderPanelSurface | undefined;
   /** The panel's new tabs, offered by the empty-canvas menu to place at a scene point. */
@@ -712,7 +750,13 @@ export default function ExcalidrawBoard({
     | undefined;
 }) {
   const { resolvedTheme } = useTheme();
-  const storageKey = draft ? DRAFT_STORAGE_KEY : `${TURN_STORAGE_PREFIX}${storageId}`;
+  const storageKey = draft ? DRAFT_STORAGE_KEY : boardStorageKey(storageId);
+  const anchorsKey =
+    workspaceMode && canvasThread !== null
+      ? `${canvasThread.environmentId}:${canvasThread.threadId}`
+      : null;
+  // A thread board has no focused chat pin; "" names no board in the anchors store.
+  const focusedChatThreadId = useFocusedChat(anchorsKey ?? "");
   const [initialData] = useState(() => {
     const saved = readSavedBoard(storageKey);
     if (draft || storageId === "none") return saved;
@@ -789,9 +833,27 @@ export default function ExcalidrawBoard({
     panFrame: null as number | null,
   });
 
-  const moveCamera = (target: { scrollX: number; scrollY: number }) => {
-    camera.current.set = target;
-    api?.updateScene({ appState: target, captureUpdate: CaptureUpdateAction.NEVER });
+  const moveCamera = (target: {
+    scrollX: number;
+    scrollY: number;
+    zoom?: { readonly value: number };
+  }) => {
+    camera.current.set = { scrollX: target.scrollX, scrollY: target.scrollY };
+    if (target.zoom === undefined) {
+      api?.updateScene({
+        appState: { scrollX: target.scrollX, scrollY: target.scrollY },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    } else {
+      api?.updateScene({
+        appState: {
+          scrollX: target.scrollX,
+          scrollY: target.scrollY,
+          zoom: target.zoom as ReturnType<ExcalidrawImperativeAPI["getAppState"]>["zoom"],
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    }
   };
 
   const setFollowing = (following: boolean) => {
@@ -804,6 +866,45 @@ export default function ExcalidrawBoard({
     if (camera.current.panFrame !== null) cancelAnimationFrame(camera.current.panFrame);
     camera.current.panFrame = null;
   });
+
+  const glideCamera = useStableCallback(
+    (target: { scrollX: number; scrollY: number; zoom?: number }) => {
+      if (!api) return;
+      cancelPan();
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduceMotion) {
+        moveCamera({
+          scrollX: target.scrollX,
+          scrollY: target.scrollY,
+          ...(target.zoom === undefined ? {} : { zoom: { value: target.zoom } }),
+        });
+        return;
+      }
+      const start = api.getAppState();
+      const fromX = start.scrollX;
+      const fromY = start.scrollY;
+      const fromZoom = start.zoom.value;
+      const toZoom = target.zoom ?? fromZoom;
+      const startedAt = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startedAt) / PAN_DURATION_MS);
+        const eased = 1 - (1 - t) ** 3;
+        moveCamera({
+          scrollX: fromX + (target.scrollX - fromX) * eased,
+          scrollY: fromY + (target.scrollY - fromY) * eased,
+          ...(target.zoom === undefined
+            ? {}
+            : { zoom: { value: fromZoom + (toZoom - fromZoom) * eased } }),
+        });
+        if (t < 1) {
+          camera.current.panFrame = requestAnimationFrame(step);
+        } else {
+          camera.current.panFrame = null;
+        }
+      };
+      camera.current.panFrame = requestAnimationFrame(step);
+    },
+  );
 
   // Eases toward the latest turn, reading its position each frame because it may still be growing.
   const panToLatest = useStableCallback((animated: boolean) => {
@@ -860,6 +961,13 @@ export default function ExcalidrawBoard({
     const board = boardRef.current;
     const root = boardRootOf(board);
     if (!api || !board || !root || api.getAppState().isLoading) return;
+    if (workspaceMode) {
+      fitMarkdownCards(api, turnBoard.layer());
+      const view = api.getAppState();
+      placeCards(api, turnBoard, board, view, surfaceActivation);
+      settleRasterZoom(view.zoom.value);
+      return;
+    }
     reconcileTurns(api, turnBoard);
     const view = api.getAppState();
     placeCards(api, turnBoard, board, view, surfaceActivation);
@@ -878,7 +986,7 @@ export default function ExcalidrawBoard({
   });
 
   const pushScene = () => {
-    if (!api || !saveCanvas.current) return;
+    if (!api || !saveCanvas.current || isDeletedBoard(storageId)) return;
     const elements = api.getSceneElementsIncludingDeleted();
     const versions = elements.reduce((total, element) => total + element.version, 0);
     if (versions === savedVersions.current) return;
@@ -1026,6 +1134,9 @@ export default function ExcalidrawBoard({
     if (incoming.size > 0) {
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.NEVER });
       syncTurns();
+      if (anchorsKey !== null) {
+        useCanvasAnchorsStore.getState().updateAnchors(anchorsKey, extractCanvasAnchors(elements));
+      }
       if (!firstScene) showAgentPresence(agentStrokesOf(incoming.values(), byId));
     }
     // The first scene also means saving works, so marks made before it, like a draft's, go now.
@@ -1051,8 +1162,10 @@ export default function ExcalidrawBoard({
           const scene = waitingScene.current;
           waitingScene.current = null;
           applyScene(scene);
-        } else if (camera.current.latestTurn === null) syncTurns();
+        } else if (!workspaceMode && camera.current.latestTurn === null) syncTurns();
         else {
+          // A workspace canvas has no turns to chase, so a pan or zoom only places the cards; an
+          // edit also fits its markdown cards, below.
           placeCards(api, turnBoard, board, appState, surfaceActivation);
           settleRasterZoom(appState.zoom.value);
         }
@@ -1066,6 +1179,13 @@ export default function ExcalidrawBoard({
           setCards((current) => (sameCanvasCards(current, nextCards) ? current : nextCards));
           if (canvasThread !== null) {
             publishCanvasTerminals(canvasThread, canvasTerminalIdsOf(nextCards));
+          }
+          if (anchorsKey !== null) {
+            // Dragging moves cards without changing their text, so it measures nothing.
+            if (!dragging) fitMarkdownCards(api, turnBoard.layer());
+            useCanvasAnchorsStore
+              .getState()
+              .updateAnchors(anchorsKey, extractCanvasAnchors(elements));
           }
           // A deleted element's citation has nothing left to point at.
           setCiteAnchors((current) => {
@@ -1105,6 +1225,7 @@ export default function ExcalidrawBoard({
     lastVersions.current = versions;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
+      if (isDeletedBoard(storageId)) return;
       localStorage.setItem(
         storageKey,
         JSON.stringify(withoutTakenMarks(elements.filter((element) => !element.isDeleted))),
@@ -1127,6 +1248,7 @@ export default function ExcalidrawBoard({
     const { set } = camera.current;
     if (set?.scrollX === scrollX && set.scrollY === scrollY) return;
     cancelPan();
+    if (workspaceMode) return;
     const target = latestTurnCamera(api, turnBoard, root, view);
     if (target) {
       setFollowing(Math.abs(target.scrollY - scrollY) * zoom.value < FOLLOW_TOLERANCE_PX);
@@ -1344,22 +1466,175 @@ export default function ExcalidrawBoard({
     return () => board.removeEventListener("contextmenu", note, true);
   }, [api, draft]);
 
+  const jumpToElement = useStableCallback(
+    (elementId: string, options?: { readonly fit?: boolean }) => {
+      const root = boardRootOf(boardRef.current);
+      const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
+      if (!api || !root || element === undefined) return false;
+      setFollowing(false);
+      const rect = root.getBoundingClientRect();
+      const headerHeight =
+        root.querySelector("[data-chat-header]")?.getBoundingClientRect().height ??
+        TOPBAR_FALLBACK_PX;
+      const currentZoom = api.getAppState().zoom.value;
+      const padding = 72;
+      const availWidth = Math.max(200, rect.width - 2 * padding);
+      const availHeight = Math.max(
+        200,
+        rect.height - headerHeight - TOOLBAR_CLEARANCE_PX - padding,
+      );
+      const targetZoom = options?.fit
+        ? Math.max(
+            0.2,
+            Math.min(
+              1.1,
+              availWidth / Math.max(1, element.width),
+              availHeight / Math.max(1, element.height),
+            ),
+          )
+        : currentZoom;
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      const topClearance = (headerHeight + TOOLBAR_CLEARANCE_PX) / targetZoom;
+      const centeredScrollY = rect.height / 2 / targetZoom - centerY;
+      glideCamera({
+        scrollX: rect.width / 2 / targetZoom - centerX,
+        scrollY: options?.fit
+          ? centeredScrollY + (headerHeight + TOOLBAR_CLEARANCE_PX) / 2 / targetZoom
+          : // Screen top is (y + scrollY) * zoom, so a tall card's top stays below the chrome.
+            Math.max(centeredScrollY, topClearance - element.y),
+        ...(options?.fit ? { zoom: targetZoom } : {}),
+      });
+      return true;
+    },
+  );
+
+  const zoomToFit = useStableCallback(() => {
+    const root = boardRootOf(boardRef.current);
+    if (!api || !root) return;
+    const live = api.getSceneElements().filter((element) => !element.isDeleted);
+    if (live.length === 0) {
+      glideCamera({ scrollX: 0, scrollY: 0, zoom: 1 });
+      return;
+    }
+    const [minX, minY, maxX, maxY] = getCommonBounds(live);
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+    const rect = root.getBoundingClientRect();
+    const headerHeight =
+      root.querySelector("[data-chat-header]")?.getBoundingClientRect().height ??
+      TOPBAR_FALLBACK_PX;
+    const padding = 80;
+    const availWidth = Math.max(200, rect.width - 2 * padding);
+    const availHeight = Math.max(200, rect.height - headerHeight - TOOLBAR_CLEARANCE_PX - padding);
+    const targetZoom = Math.max(0.15, Math.min(1, availWidth / width, availHeight / height));
+    glideCamera({
+      scrollX: rect.width / 2 / targetZoom - (minX + width / 2),
+      scrollY:
+        (rect.height + headerHeight + TOOLBAR_CLEARANCE_PX) / 2 / targetZoom - (minY + height / 2),
+      zoom: targetZoom,
+    });
+  });
+
+  const addFrame = useStableCallback(
+    (at?: { readonly x: number; readonly y: number }, name?: string) => {
+      if (!api) return null;
+      const scene = api.getSceneElements();
+      const frameNames = scene.flatMap((el) =>
+        el.type === "frame" && !el.isDeleted && typeof el.name === "string" ? [el.name] : [],
+      );
+      const view = api.getAppState();
+      const zoom = view.zoom.value;
+      const width = 960;
+      const height = 640;
+      const x = at ? at.x : -view.scrollX + (view.width / zoom - width) / 2;
+      const y = at ? at.y : -view.scrollY + (view.height / zoom - height) / 2;
+      const [element] = convertToExcalidrawElements([
+        {
+          type: "frame",
+          name: name ?? nextDefaultName("Zone", frameNames),
+          x,
+          y,
+          width,
+          height,
+          children: [],
+        },
+      ]);
+      if (element === undefined) return null;
+      api.updateScene({
+        elements: [...api.getSceneElementsIncludingDeleted(), element],
+        appState: { selectedElementIds: { [element.id]: true } },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      return element.id;
+    },
+  );
+
+  const placeChatPin = useStableCallback(
+    (
+      thread: { readonly threadId: ThreadId; readonly title: string },
+      at?: { readonly x: number; readonly y: number },
+    ) => {
+      if (!api) return null;
+      return placeSurfaceCard(
+        api,
+        {
+          kind: "surface",
+          surface: { kind: "side-chat", threadId: thread.threadId },
+          title: thread.title,
+        },
+        at ? { at } : { inView: true },
+      );
+    },
+  );
+
   // The panel places surfaces through this board while it shows the thread.
   const canvasEnvironmentId = canvasThread?.environmentId ?? null;
   const canvasThreadId = canvasThread?.threadId ?? null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted board with the panel's module-level placement action and terminal list until unmount
+  const onBoardActionsStable = useStableCallback((actions: WorkspaceBoardActions | null) =>
+    onBoardActions?.(actions),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted board with the panel's module-level placement action, a workspace canvas's anchors store, and terminal list until unmount
   useEffect(() => {
     if (canvasEnvironmentId === null || canvasThreadId === null || !api) return;
     const threadRef = { environmentId: canvasEnvironmentId, threadId: canvasThreadId };
-    const unregister = registerCanvasBoard(threadRef, (card, where) =>
-      placeSurfaceCard(api, card, where),
-    );
+    const unregister = registerCanvasBoard(threadRef, (card, where) => {
+      placeSurfaceCard(api, card, where);
+    });
+    const actions: WorkspaceBoardActions | null = workspaceMode
+      ? { jumpToElement, zoomToFit, addFrame, placeChatPin }
+      : null;
+    const boardKey = `${canvasEnvironmentId}:${canvasThreadId}`;
+    if (actions !== null) {
+      useCanvasAnchorsStore.getState().registerBoard({
+        boardKey,
+        environmentId: canvasEnvironmentId,
+        boardId: canvasThreadId,
+        actions,
+        ...extractCanvasAnchors(api.getSceneElements()),
+      });
+      onBoardActionsStable(actions);
+    }
     return () => {
       unregister();
+      if (actions !== null) {
+        onBoardActionsStable(null);
+        useCanvasAnchorsStore.getState().unregisterBoard(boardKey);
+      }
       // Without a board, its cards' terminals belong to the drawer again.
       publishCanvasTerminals(threadRef, []);
     };
-  }, [api, canvasEnvironmentId, canvasThreadId]);
+  }, [
+    addFrame,
+    api,
+    canvasEnvironmentId,
+    canvasThreadId,
+    jumpToElement,
+    onBoardActionsStable,
+    placeChatPin,
+    workspaceMode,
+    zoomToFit,
+  ]);
 
   // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
@@ -1435,9 +1710,15 @@ export default function ExcalidrawBoard({
           <MainMenu.DefaultItems.LoadScene />
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ClearCanvas />
-          <MainMenu.Item onSelect={resetLayout}>
-            <T>Reset layout</T>
-          </MainMenu.Item>
+          {workspaceMode ? (
+            <MainMenu.Item onSelect={zoomToFit}>
+              <T>Zoom to fit</T>
+            </MainMenu.Item>
+          ) : (
+            <MainMenu.Item onSelect={resetLayout}>
+              <T>Reset layout</T>
+            </MainMenu.Item>
+          )}
         </MainMenu>
       </Excalidraw>
       {canvasThread === null || draft || !api ? null : (
@@ -1449,7 +1730,7 @@ export default function ExcalidrawBoard({
           // A chat shown in two cards is still one chat.
           threadIds={[
             ...new Set([
-              canvasThread.threadId,
+              ...(workspaceMode ? [] : [canvasThread.threadId]),
               ...cards.flatMap((card) =>
                 card.card.kind === "surface" && card.card.surface.kind === "side-chat"
                   ? [card.card.surface.threadId as ThreadId]
@@ -1504,10 +1785,28 @@ export default function ExcalidrawBoard({
                   data-canvas-card={card.card.kind}
                   data-canvas-card-id={card.id}
                   data-canvas-chat={chatAccentOf(card) === undefined ? undefined : ""}
+                  data-canvas-chat-focused={
+                    card.card.kind === "surface" &&
+                    card.card.surface.kind === "side-chat" &&
+                    focusedChatThreadId !== null &&
+                    card.card.surface.threadId === focusedChatThreadId
+                      ? "true"
+                      : undefined
+                  }
                   // A card being used stays live past the cap until the pointer leaves it.
                   onPointerDownCapture={
                     card.card.kind === "surface"
-                      ? () => surfaceActivation.setInteracting(card.id)
+                      ? (() => {
+                          const surfaceCard = card.card;
+                          return () => {
+                            surfaceActivation.setInteracting(card.id);
+                            if (anchorsKey !== null && surfaceCard.surface.kind === "side-chat") {
+                              useCanvasAnchorsStore
+                                .getState()
+                                .focusChat(anchorsKey, surfaceCard.surface.threadId as ThreadId);
+                            }
+                          };
+                        })()
                       : undefined
                   }
                   onPointerLeave={(event) => {

@@ -1,5 +1,6 @@
 export * from "./baseSchemas.ts";
 export * from "./threadCanvas.ts";
+export * from "./workspaceCanvas.ts";
 export * from "./pageState.ts";
 export * from "./assistantCitations.ts";
 export * from "./composerContext.ts";

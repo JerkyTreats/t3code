@@ -119,6 +119,12 @@ export class ThreadCanvasStore extends Context.Service<
     readonly chatCardOf: (
       chatThreadId: ThreadId,
     ) => Effect.Effect<{ readonly canvasThreadId: ThreadId; readonly card: string } | null>;
+    /**
+     * Deletes a board's saved scene, sketches, and chat-board routing without touching threads.
+     * Later writes to it from this process are dropped, so a turn finishing on it cannot bring
+     * it back.
+     */
+    readonly remove: (threadId: ThreadId) => Effect.Effect<void, ThreadCanvasError>;
     /** The current scene, then every later one. */
     readonly follow: (threadId: ThreadId) => Stream.Stream<ThreadCanvasScene, ThreadCanvasError>;
   }
@@ -174,10 +180,13 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // Boards removed while this process runs; writes to them are dropped.
+  const removed = new Set<ThreadId>();
   // Which boards show each chat as a card, by chat thread, the board written last at the end.
   const chatBoards = new Map<string, Map<ThreadId, string>>();
   const indexBoard = (canvasThreadId: ThreadId, elements: ReadonlyArray<ThreadCanvasElement>) => {
     for (const boards of chatBoards.values()) boards.delete(canvasThreadId);
+    if (removed.has(canvasThreadId)) return;
     for (const [chatThreadId, card] of chatCardsIn(elements)) {
       if (chatThreadId === canvasThreadId) continue;
       const boards = chatBoards.get(chatThreadId) ?? new Map<ThreadId, string>();
@@ -216,6 +225,7 @@ const make = Effect.gen(function* () {
 
   // Writes through a temp file so a crash cannot leave half a scene for the next read.
   const write = (threadId: ThreadId, scene: ThreadCanvasScene) => {
+    if (removed.has(threadId)) return Effect.void;
     const file = fileFor(threadId);
     const temp = `${file}.${scene.revision}.tmp`;
     return fileSystem.makeDirectory(directory, { recursive: true }).pipe(
@@ -237,6 +247,7 @@ const make = Effect.gen(function* () {
   const saveFromClient: ThreadCanvasStore["Service"]["saveFromClient"] = (input) =>
     writes.withPermits(1)(
       Effect.gen(function* () {
+        if (removed.has(input.threadId)) return;
         const sketches = input.sketches;
         if (sketches !== undefined) {
           yield* fileSystem.makeDirectory(directory, { recursive: true }).pipe(
@@ -463,6 +474,36 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  // A file that is already gone is fine; any other failure fails the removal, so a workspace
+  // canvas whose scene survived stays listed and deleting it again finishes the job.
+  const removeFileIfExists = (target: string) =>
+    fileSystem
+      .remove(target, { force: true })
+      .pipe(Effect.mapError(failure("Could not remove the canvas")));
+
+  const remove: ThreadCanvasStore["Service"]["remove"] = (threadId) =>
+    writes.withPermits(1)(
+      Effect.gen(function* () {
+        yield* indexed;
+        const stem = fileStem(threadId);
+        const sketchCount = yield* fileSystem.readFileString(sketchMarksFor(threadId)).pipe(
+          Effect.flatMap(decodeSketchMarks),
+          Effect.map((areas) => areas.length),
+          Effect.orElseSucceed(() => 0),
+        );
+        // The scene goes last, so a failure part way leaves the board whole.
+        for (let index = 0; index < sketchCount; index++) {
+          yield* removeFileIfExists(sketchFor(threadId, index));
+        }
+        yield* removeFileIfExists(sketchMarksFor(threadId));
+        yield* removeFileIfExists(`${stem}.thread`);
+        yield* removeFileIfExists(fileFor(threadId));
+        removed.add(threadId);
+        indexBoard(threadId, []);
+        yield* PubSub.publish(changes, { threadId, scene: EMPTY_SCENE });
+      }),
+    );
+
   return ThreadCanvasStore.of({
     read,
     saveFromClient,
@@ -470,6 +511,7 @@ const make = Effect.gen(function* () {
     revealPages,
     deliverToAgent,
     chatCardOf,
+    remove,
     follow,
   });
 });
@@ -480,4 +522,5 @@ export const layer = Layer.effect(ThreadCanvasStore, make);
 export const layerNoChanges = Layer.mock(ThreadCanvasStore)({
   deliverToAgent: () => Effect.succeed(EMPTY_CANVAS_DELIVERY),
   chatCardOf: () => Effect.succeed(null),
+  remove: () => Effect.void,
 });

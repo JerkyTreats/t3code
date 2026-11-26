@@ -11,7 +11,8 @@ import type {
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { lazy, Suspense } from "react";
+import { lazy, type RefObject, Suspense } from "react";
+import type { ChatComposerHandle } from "./ChatComposer";
 import { LinkedThreadPane } from "./LinkedThreadPane";
 import SideThreadPane from "./SideThreadPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
@@ -88,11 +89,17 @@ export function RightPanelSurfaceContent(props: {
   readonly issuesSupported: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
+  /** The thread a diff card shows, for a board with no thread route such as a workspace canvas. */
+  readonly diffThreadRef?: ScopedThreadRef | null | undefined;
   /**
    * Set when the surface runs in a canvas card rather than the panel. The panel keys its tab
    * state by surface id, which a card shares, so these call sites use the card's own actions.
    */
   readonly card?: PanelSurfaceCard | undefined;
+  /** Optional per-chat composer ref provider so canvas Cite routes into the focused Chat Pin. */
+  readonly composerHandleForThread?:
+    | ((threadId: string) => RefObject<ChatComposerHandle | null> | null)
+    | undefined;
 }) {
   const { surface, threadRef, visible, onCloseSurface, card } = props;
   const gt = useGT();
@@ -143,7 +150,8 @@ export function RightPanelSurfaceContent(props: {
       return (
         <Suspense fallback={null}>
           <DiffPanel
-            key={scopedThreadKey(threadRef)}
+            key={scopedThreadKey(props.diffThreadRef ?? threadRef)}
+            threadRef={props.diffThreadRef}
             mode="embedded"
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceRevision}
@@ -291,6 +299,7 @@ export function RightPanelSurfaceContent(props: {
           parentRef={threadRef}
           surface={surface}
           parentPanel={props.sideChatParentPanel}
+          composerHandleRef={props.composerHandleForThread?.(surface.threadId)}
           onClose={() => (card ? card.close() : onCloseSurface(surface))}
         />
       );

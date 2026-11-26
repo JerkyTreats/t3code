@@ -185,6 +185,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workspaceTaskFolder]: AuthFilesystemReadScope,
   [WS_METHODS.filesystemGetMetadata]: AuthFilesystemReadScope,
   [WS_METHODS.subscribeThreadCanvas]: AuthOrchestrationReadScope,
+  [WS_METHODS.subscribeWorkspaceCanvases]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribePageState]: AuthOrchestrationReadScope,
   [WS_METHODS.pageStateWrite]: AuthOrchestrationOperateScope,
   [WS_METHODS.threadCanvasBrowserTrail]: AuthOrchestrationReadScope,

@@ -2,6 +2,7 @@ import { NodeServices } from "@effect/platform-node";
 import { assert, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
@@ -217,6 +218,53 @@ layer("ThreadCanvasStore", (it) => {
         card: "restart-card",
       });
     }),
+  );
+
+  it.effect("removes a board's scene, sketches and chat routing, and drops writes after", () =>
+    Effect.gen(function* () {
+      const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const { stateDir } = yield* ServerConfig.ServerConfig;
+      const board = ThreadId.make("canvas:removed-board");
+      const chat = ThreadId.make("thread-canvas-removed-chat");
+      const card = {
+        id: "removed-card",
+        version: 1,
+        customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: chat } } },
+      };
+      const png = Buffer.from("png-bytes").toString("base64");
+      yield* canvas.saveFromClient({
+        threadId: board,
+        elements: [card, { id: "stroke", version: 1, type: "freedraw" }],
+        sketches: [{ png, marks: ["stroke"] }],
+      });
+      const boardFiles = fileSystem
+        .readDirectory(`${stateDir}/canvases`)
+        .pipe(
+          Effect.map((names) => names.filter((name) => name.startsWith(encodeURIComponent(board)))),
+        );
+      assert.isNotEmpty(yield* boardFiles);
+      // Pulling the current scene means the follower is subscribed before the removal.
+      const scenes = yield* Stream.toPull(canvas.follow(board));
+      assert.isNotEmpty((yield* scenes)[0].elements);
+
+      yield* canvas.remove(board);
+
+      assert.deepStrictEqual(yield* boardFiles, []);
+      assert.isNull(yield* canvas.chatCardOf(chat));
+      assert.deepStrictEqual((yield* scenes)[0].elements, []);
+
+      // A client or a turn still writing to the board cannot bring it back.
+      yield* canvas.saveFromClient({ threadId: board, elements: [{ ...card, version: 2 }] });
+      yield* canvas.draw({
+        threadId: board,
+        drawingId: "late",
+        shapes: [{ id: "box", type: "rectangle", x: 0, y: 0 }],
+      });
+      assert.deepStrictEqual((yield* canvas.read(board)).elements, []);
+      assert.deepStrictEqual(yield* boardFiles, []);
+      assert.isNull(yield* canvas.chatCardOf(chat));
+    }).pipe(Effect.scoped),
   );
 
   it.effect("stores a thread whose id would not fit in a filename", () =>

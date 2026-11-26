@@ -61,6 +61,34 @@ describe("resolveCanvas", () => {
     }),
   );
 
+  it.effect("routes peer chats pinned on a workspace canvas beside their own cards", () =>
+    Effect.gen(function* () {
+      const workspaceBoard = ThreadId.make("canvas:ws-board-1");
+      const peerA = ThreadId.make("thread-peer-a");
+      const peerB = ThreadId.make("thread-peer-b");
+      const placed = (threadId: ThreadId) =>
+        Effect.succeed(
+          threadId === peerA
+            ? { canvasThreadId: workspaceBoard, card: "card-a" }
+            : threadId === peerB
+              ? { canvasThreadId: workspaceBoard, card: "card-b" }
+              : null,
+        );
+      assert.deepStrictEqual(yield* resolveCanvas(peerA, lineageOf, placed), {
+        threadId: workspaceBoard,
+        card: "card-a",
+      });
+      assert.deepStrictEqual(yield* resolveCanvas(peerB, lineageOf, placed), {
+        threadId: workspaceBoard,
+        card: "card-b",
+      });
+      assert.notStrictEqual(
+        sharedDrawingId("notes", peerA, workspaceBoard),
+        sharedDrawingId("notes", peerB, workspaceBoard),
+      );
+    }),
+  );
+
   it.effect("keeps an unknown thread on its own canvas", () =>
     Effect.gen(function* () {
       const unknown = ThreadId.make("thread-unknown");

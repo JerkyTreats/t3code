@@ -295,6 +295,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ThreadCanvasStore from "./canvas/ThreadCanvasStore.ts";
+import * as WorkspaceCanvasStore from "./canvas/WorkspaceCanvasStore.ts";
 import * as PageStateStore from "./pageState/PageStateStore.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
@@ -1637,6 +1638,7 @@ export const layerWsRpc = (
       const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const threadCanvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const workspaceCanvases = yield* WorkspaceCanvasStore.WorkspaceCanvasStore;
       const pageState = yield* PageStateStore.PageStateStore;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
@@ -3210,8 +3212,18 @@ export const layerWsRpc = (
         [WS_METHODS.attachmentsCreateUploadUrl]: (input) => issueAttachmentUploadUrl(input),
         [WS_METHODS.attachmentsDelete]: (input) => deletePendingAttachment(input.attachmentId),
         [WS_METHODS.threadCanvasSave]: (input) =>
-          authorizeEffect(AuthOrchestrationOperateScope, threadCanvas.saveFromClient(input)),
+          authorizeEffect(
+            AuthOrchestrationOperateScope,
+            workspaceCanvases.writeBoard(input.threadId, threadCanvas.saveFromClient(input)),
+          ),
         [WS_METHODS.subscribeThreadCanvas]: (input) => threadCanvas.follow(input.threadId),
+        [WS_METHODS.workspaceCanvasCreate]: (input) =>
+          authorizeEffect(AuthOrchestrationOperateScope, workspaceCanvases.create(input)),
+        [WS_METHODS.workspaceCanvasRename]: (input) =>
+          authorizeEffect(AuthOrchestrationOperateScope, workspaceCanvases.rename(input)),
+        [WS_METHODS.workspaceCanvasDelete]: (input) =>
+          authorizeEffect(AuthOrchestrationOperateScope, workspaceCanvases.remove(input.canvasId)),
+        [WS_METHODS.subscribeWorkspaceCanvases]: () => workspaceCanvases.follow,
         // A page's write is the reader's own action, as a canvas save is.
         [WS_METHODS.pageStateWrite]: ({ threadId, key, set, merge, expectedRevision }) =>
           pageState

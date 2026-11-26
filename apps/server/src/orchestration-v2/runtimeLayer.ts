@@ -57,6 +57,7 @@ import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
+import * as WorkspaceCanvasStore from "../canvas/WorkspaceCanvasStore.ts";
 import * as PageStateStore from "../pageState/PageStateStore.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadForkService from "./ThreadForkService.ts";
@@ -405,8 +406,13 @@ const layerMcpSignInProvided = McpSignIn.layer.pipe(
   Layer.provide(Layer.merge(layerThreadManagementProvided, layerProviderSessionManagerProvided)),
 );
 
+const layerWorkspaceCanvasStoreProvided = WorkspaceCanvasStore.layer.pipe(
+  Layer.provide(ThreadCanvasStore.layer),
+);
+
 export const layer = Layer.mergeAll(
   ThreadCanvasStore.layer,
+  layerWorkspaceCanvasStoreProvided,
   // Resolves a delegated task to its delegator through the orchestrator's thread shells.
   PageStateStore.layer.pipe(Layer.provide(layerOrchestratorProvided)),
   IdAllocator.layer,
@@ -425,6 +431,9 @@ export const layer = Layer.mergeAll(
 
 export const layerProduction = Layer.mergeAll(
   ThreadCanvasStore.layer,
+  layerWorkspaceCanvasStoreProvided,
+  // Deleting a project deletes its canvases.
+  WorkspaceCanvasStore.layerProjectCleanup.pipe(Layer.provide(layerWorkspaceCanvasStoreProvided)),
   WorktreeBranchSync.layer.pipe(
     Layer.provide(Layer.merge(layerThreadManagementProvided, ProjectionStore.layer)),
   ),

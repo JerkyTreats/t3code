@@ -121,7 +121,9 @@ import {
 } from "../sidebarProjectGrouping";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
 import { isThreadInSidebarView, sidebarViewShowsDrafts } from "../fork/threadSidebarView";
+import { useCanvasAnchorsStore } from "../fork/canvasAnchors";
 import { canPlaceThreadOnCanvas, placeThreadOnCanvas } from "../fork/canvasSurfaceCards";
+import { SidebarCanvasSection, useCreateWorkspaceCanvas } from "../fork/SidebarCanvasSection";
 import type { SidebarView } from "../fork/threadSidebarView";
 import {
   getThreadKeysToDeselectAfterDelete,
@@ -1063,6 +1065,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeDraftRedirect,
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  // Primitives only, so a workspace canvas's anchor changes never re-render the sidebar.
+  const workspaceBoardEnvironmentId = useCanvasAnchorsStore(
+    (state) => state.activeBoard?.environmentId ?? null,
+  );
+  const workspaceBoardId = useCanvasAnchorsStore((state) => state.activeBoard?.boardId ?? null);
+  const canvasTargetRef =
+    routeThreadRef ??
+    (workspaceBoardEnvironmentId !== null && workspaceBoardId !== null
+      ? scopeThreadRef(workspaceBoardEnvironmentId, workspaceBoardId)
+      : null);
+  const createWorkspaceCanvas = useCreateWorkspaceCanvas(() => {
+    if (isMobile) setOpenMobile(false);
+  });
 
   // A selection made under one scope can hold threads the next scope hides.
   // The viewport outlives the scope and does not anchor, so a new list starts at the top.
@@ -1261,6 +1276,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           api.contextMenu.show(
             [
               { id: "new-thread", label: gt("New thread") },
+              { id: "new-canvas", label: gt("New canvas") },
               { id: "copy-path", label: gt("Copy path") },
               ...(canPinProject(group)
                 ? [
@@ -1279,6 +1295,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         switch (clicked.value) {
           case "new-thread":
             startThreadInProjectFolder(group);
+            return;
+          case "new-canvas":
+            void createWorkspaceCanvas({
+              id: group.id,
+              environmentId: group.environmentId,
+              title: group.displayName,
+            });
             return;
           case "copy-path":
             copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
@@ -2703,7 +2726,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
-              canPlaceOnCanvas: canPlaceThreadOnCanvas(routeThreadRef, threadRef),
+              canPlaceOnCanvas: canPlaceThreadOnCanvas(canvasTargetRef, threadRef),
               canRename: !fromSearch,
               supports: {
                 settlement: configLoaded,
@@ -2772,8 +2795,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           }
           case "place-on-canvas":
-            if (routeThreadRef !== null) {
-              placeThreadOnCanvas(routeThreadRef, { threadId: thread.id, title: thread.title });
+            if (canvasTargetRef !== null) {
+              placeThreadOnCanvas(canvasTargetRef, { threadId: thread.id, title: thread.title });
             }
             return;
           case "settle":
@@ -3320,6 +3343,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         }
       >
         <SidebarGroup className="flex-1" role="presentation">
+          {!isSearchingThreads ? (
+            <SidebarCanvasSection
+              projects={projects}
+              scopedProjectKeys={scopedProjectKeys}
+              onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
+            />
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
