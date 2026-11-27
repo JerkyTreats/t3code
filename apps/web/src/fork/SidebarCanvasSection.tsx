@@ -36,7 +36,7 @@ import {
 } from "../state/workspaceCanvas";
 import { type CanvasChatAnchor, focusedChatOf, useCanvasAnchorsStore } from "./canvasAnchors";
 import { chatColorOf } from "./canvasChatPresence";
-import { chatActivityLabel, chatActivityOf } from "./canvasChatStatus";
+import { chatActivityLabel, chatActivityOf } from "./canvasChatActivity";
 import { forgetDeletedBoard } from "./workspaceCanvasBoards";
 
 export interface SidebarCanvasProject {

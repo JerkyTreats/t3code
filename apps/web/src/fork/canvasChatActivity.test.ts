@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { boardActivityOf, type ChatActivity, chatActivityOf } from "./canvasChatStatus";
+import { boardActivityOf, type ChatActivity, chatActivityOf } from "./canvasChatActivity";
 
 const shell = (input: {
   readonly status?: "idle" | "running" | "queued" | "failed" | "completed";
