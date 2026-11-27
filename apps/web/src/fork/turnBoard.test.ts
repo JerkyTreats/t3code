@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   layoutTurns,
+  resetTurnLayout,
   TURN_COLUMN_WIDTH_PX,
   TURN_GAP_PX,
   TURN_INSET_PX,
@@ -307,5 +308,129 @@ describe("layoutTurns with a region beside a turn", () => {
       [measured("a", 100), measured("b", 100)],
     );
     expect(boxFor(kept, "r/moved").y).toBe(b.y);
+  });
+});
+
+describe("layoutTurns prevents overlapping and leapfrogging turns", () => {
+  it("repairs overlapping and out-of-order in-column turns while leaving dragged turns put", () => {
+    const start = layoutTurns([], [measured("a", 200), measured("b", 200), measured("c", 200)]);
+    const dragged: BoardBox = {
+      key: "d",
+      turnId: "d",
+      requestedWidth: null,
+      x: 900,
+      y: 120,
+      width: TURN_COLUMN_WIDTH_PX,
+      height: 200 + 2 * TURN_INSET_PX,
+    };
+    // Simulate a corrupted scene where b overlaps a and c leapfrogged above b.
+    const corrupted: ReadonlyArray<BoardBox> = [
+      boxFor(start, "a"),
+      { ...boxFor(start, "b"), y: 50 },
+      { ...boxFor(start, "c"), y: 20 },
+      dragged,
+    ];
+    const repaired = layoutTurns(corrupted, [
+      measured("a", 200),
+      measured("b", 200),
+      measured("c", 200),
+      measured("d", 200),
+    ]);
+    const a = boxFor(repaired, "a");
+    const b = boxFor(repaired, "b");
+    const c = boxFor(repaired, "c");
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height + TURN_GAP_PX);
+    expect(c.y).toBeGreaterThanOrEqual(b.y + b.height + TURN_GAP_PX);
+    expect(boxFor(repaired, "d")).toMatchObject({ x: 900, y: 120 });
+  });
+
+  it("does not yank dragged off-column turns vertically when an in-column turn resizes", () => {
+    const start = layoutTurns([], [measured("a", 200), measured("b", 200), measured("c", 200)]);
+    const movedB = { ...boxFor(start, "b"), x: -1300 };
+    const resized = layoutTurns(
+      [boxFor(start, "a"), movedB, boxFor(start, "c")],
+      [measured("a", 600), measured("b", 200), measured("c", 200)],
+    );
+    expect(boxFor(resized, "b")).toMatchObject({ x: -1300, y: movedB.y });
+    expect(boxFor(resized, "c").y).toBe(boxFor(start, "c").y + 400);
+  });
+
+  it("stacks multiple turns loaded from history above an existing in-column turn without overlapping", () => {
+    const start = layoutTurns([], [measured("c", 100)]);
+    const c = boxFor(start, "c");
+    const next = layoutTurns(start, [measured("a", 150), measured("b", 200), measured("c", 100)]);
+    const a = boxFor(next, "a");
+    const b = boxFor(next, "b");
+    expect(b.y + b.height + TURN_GAP_PX).toBe(c.y);
+    expect(a.y + a.height + TURN_GAP_PX).toBe(b.y);
+  });
+
+  it("keeps thread-start seated above the first real turn without shifting real turns down", () => {
+    const start = layoutTurns([], [measured("a", 200), measured("b", 200)]);
+    const aBefore = boxFor(start, "a");
+    const bBefore = boxFor(start, "b");
+    const withPrefix = layoutTurns(start, [
+      measured("thread-start", 300),
+      measured("a", 200),
+      measured("b", 200),
+    ]);
+    const grownPrefix = layoutTurns(withPrefix, [
+      measured("thread-start", 1200),
+      measured("a", 200),
+      measured("b", 200),
+    ]);
+    const prefix = boxFor(grownPrefix, "thread-start");
+    expect(boxFor(grownPrefix, "a").y).toBe(aBefore.y);
+    expect(boxFor(grownPrefix, "b").y).toBe(bBefore.y);
+    expect(prefix.y + prefix.height + TURN_GAP_PX).toBe(aBefore.y);
+  });
+
+  it("ignores stale unloaded turn boxes below mounted turns when landing a new turn", () => {
+    const start = layoutTurns([], [measured("a", 100)]);
+    const a = boxFor(start, "a");
+    const staleUnloaded: BoardBox = {
+      key: "stale-old",
+      turnId: "stale-old",
+      requestedWidth: null,
+      x: -TURN_COLUMN_WIDTH_PX / 2,
+      y: 39_000,
+      width: TURN_COLUMN_WIDTH_PX,
+      height: 1_000,
+    };
+    const next = layoutTurns([a, staleUnloaded], [measured("a", 100), measured("b", 100)]);
+    expect(boxFor(next, "b").y).toBe(a.y + a.height + TURN_GAP_PX);
+  });
+
+  it("resets mounted turns cleanly, moves anchored marks with them, and stacks unloaded turns above", () => {
+    const start = layoutTurns([], [measured("a", 200), measured("b", 200)]);
+    const oldA = { ...boxFor(start, "a"), y: 35_000 };
+    const oldB = { ...boxFor(start, "b"), y: 34_000 };
+    const note: BoardBox = {
+      ...mark("note", 700, 35_040),
+      anchor: { turn: "a", edge: "top", at: 35_000, dy: 40, x: 700 },
+    };
+    const unloaded: BoardBox = {
+      key: "older",
+      turnId: "older",
+      requestedWidth: null,
+      x: -1200,
+      y: 39_000,
+      width: TURN_COLUMN_WIDTH_PX,
+      height: 500,
+    };
+    const reset = resetTurnLayout(
+      [oldA, oldB, note, unloaded],
+      [measured("a", 200), measured("b", 200)],
+    );
+    const a = boxFor(reset, "a");
+    const b = boxFor(reset, "b");
+    const older = boxFor(reset, "older");
+    expect(a.y).toBe(0);
+    expect(b.y).toBe(a.y + a.height + TURN_GAP_PX);
+    expect(boxFor(reset, "note")).toMatchObject({ y: 40, anchor: { turn: "a", at: 0, dy: 40 } });
+    expect(older).toMatchObject({
+      x: -TURN_COLUMN_WIDTH_PX / 2,
+      y: a.y - TURN_GAP_PX - older.height,
+    });
   });
 });

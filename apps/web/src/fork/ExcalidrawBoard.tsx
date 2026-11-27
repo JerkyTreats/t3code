@@ -118,7 +118,13 @@ import {
 import { boardStorageKey, isDeletedBoard } from "./workspaceCanvasBoards";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { type SketchBox, sketchAreas, sketchFrame } from "./sketchAreas";
-import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
+import {
+  layoutTurns,
+  resetTurnLayout,
+  TURN_INSET_PX,
+  type BoardBox,
+  type TurnBoard,
+} from "./turnBoard";
 import { tableWidthOf } from "./turnTableWidth";
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>;
@@ -461,6 +467,8 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
     if (box === undefined) return element;
     const restored = element.isDeleted && box.turnId !== null;
     const title = box.turnId === null ? undefined : titles.get(box.turnId);
+    const existingTitle =
+      typeof element.customData?.t3TurnTitle === "string" ? element.customData.t3TurnTitle : "";
     const anchor = box.anchor ?? null;
     const anchorMoved = box.turnId === null && !sameAnchor(turnAnchorOf(element), anchor);
     if (
@@ -482,7 +490,7 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
       height: box.height,
       isDeleted: false,
       ...(box.turnId !== null
-        ? { customData: turnData(box, title ?? "") }
+        ? { customData: turnData(box, title ?? existingTitle) }
         : anchorMoved
           ? { customData: withAnchor(element.customData, anchor) }
           : {}),
@@ -1262,20 +1270,35 @@ export default function ExcalidrawBoard({
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.NEVER });
       return;
     }
-    const scene = api.getSceneElements();
-    const marks = scene.map(asBoardBox).filter((box) => box.turnId === null);
-    const placed = layoutTurns(marks, measureCards(turnBoard));
-    api.updateScene({
-      elements: scene.map((element) => {
-        const { turnId } = asBoardBox(element);
-        const box = placed.find((candidate) => turnId !== null && candidate.turnId === turnId);
-        return box === undefined
-          ? element
-          : newElementWith(element, { x: box.x, y: box.y, width: box.width, height: box.height });
-      }),
-      captureUpdate: CaptureUpdateAction.NEVER,
+    const all = api.getSceneElementsIncludingDeleted();
+    const live = all.filter((element) => !element.isDeleted);
+    const placed = resetTurnLayout(live.map(asBoardBox), measureCards(turnBoard));
+    const byKey = new Map(placed.map((box) => [box.key, box]));
+    const byTurnId = new Map(
+      placed.flatMap((box) => (box.turnId === null ? [] : [[box.turnId, box] as const])),
+    );
+    const next = all.map((element) => {
+      if (element.isDeleted) return element;
+      const { turnId } = asBoardBox(element);
+      const box = turnId !== null ? byTurnId.get(turnId) : byKey.get(element.id);
+      if (box === undefined) return element;
+      const anchor = box.anchor ?? null;
+      const anchorMoved = box.turnId === null && !sameAnchor(turnAnchorOf(element), anchor);
+      return newElementWith(element, {
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+        ...(anchorMoved ? { customData: withAnchor(element.customData, anchor) } : {}),
+      });
     });
+    api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.NEVER });
     syncTurns();
+    panToLatest(false);
+    if (!isDeletedBoard(storageId)) {
+      localStorage.setItem(storageKey, JSON.stringify(withoutTakenMarks(api.getSceneElements())));
+      pushScene();
+    }
   };
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the scene lives outside React, so a chat state change must be pushed into it

@@ -10,6 +10,8 @@ export const TURN_INSET_PX = 12;
 export const TURN_GAP_PX = 32;
 export const TURN_COLUMN_WIDTH_PX = 860;
 export const TURN_MAX_WIDTH_PX = 1600;
+/** Synthetic id for leading non-user rows at the top of a paginated history window. */
+export const THREAD_START_TURN_ID = "thread-start";
 
 export interface TurnCard {
   readonly id: string;
@@ -128,20 +130,29 @@ function widthFor(requestedWidth: number | null) {
   return Math.max(TURN_COLUMN_WIDTH_PX, (requestedWidth ?? 0) + 2 * TURN_INSET_PX);
 }
 
-/** A new turn lands under whatever sits in the column, so it never covers a mark. */
-function landingY(boxes: ReadonlyArray<BoardBox>) {
+/**
+ * A new turn lands under whatever sits in the column, so it never covers a mark. Stale unloaded
+ * turn boxes (not in the currently mounted turns) are skipped once mounted turns exist, because
+ * pagination only unloads older history and a corrupted old box must not hijack new turn landing.
+ */
+function landingY(boxes: ReadonlyArray<BoardBox>, activeTurnIds: ReadonlySet<string>) {
   const edge = TURN_COLUMN_WIDTH_PX / 2;
+  const ignoreUnloaded = activeTurnIds.size > 0;
   const bottoms = boxes
-    .filter((box) => box.x < edge && box.x + box.width > -edge)
+    .filter(
+      (box) =>
+        box.x < edge &&
+        box.x + box.width > -edge &&
+        (!ignoreUnloaded || box.turnId === null || activeTurnIds.has(box.turnId)),
+    )
     .map((box) => box.y + box.height);
   return bottoms.length === 0 ? 0 : Math.max(...bottoms) + TURN_GAP_PX;
 }
 
 /**
- * Places every turn. Turns the reader moved stay put. A turn still in the column inserts space
- * when it changes height, so the turns below it move with it. Earlier turns loaded from history
- * land above the turns they precede. Everything else follows the turn edge it is anchored to,
- * whoever drew it, however late it arrives; layout never re-anchors it.
+ * Places every turn without overlapping or leapfrogging in-column turns. Moved turns stay put;
+ * history turns stack upward above their follower and `thread-start` sits above the first real turn.
+ * Anchored content follows its turn edge and is never re-anchored by layout.
  */
 export function layoutTurns(
   boxes: ReadonlyArray<BoardBox>,
@@ -166,26 +177,15 @@ export function layoutTurns(
   // A new turn lands below the regions as they stand, not where a stale copy left them.
   followAnchors(placed);
   const boxFor = (id: string) => placed.find((box) => box.turnId === id);
+  const turnIndex = new Map(turns.map((turn, index) => [turn.id, index]));
+  const activeTurnIds = new Set(turnIndex.keys());
+
+  // Phase A: resize existing real turns and shift in-column turns that follow them.
   for (const [index, turn] of turns.entries()) {
-    const height = turn.height + 2 * TURN_INSET_PX;
+    if (turn.id === THREAD_START_TURN_ID) continue;
     const box = boxFor(turn.id);
-    if (box === undefined) {
-      const width = widthFor(turn.requestedWidth);
-      const next = turns
-        .slice(index + 1)
-        .map((later) => boxFor(later.id))
-        .find((later) => later !== undefined);
-      placed.push({
-        key: turn.id,
-        turnId: turn.id,
-        requestedWidth: turn.requestedWidth,
-        x: -width / 2,
-        y: next === undefined ? landingY(placed) : next.y - height - TURN_GAP_PX,
-        width,
-        height,
-      });
-      continue;
-    }
+    if (box === undefined) continue;
+    const height = turn.height + 2 * TURN_INSET_PX;
     // A turn's render arrives after the turn lands, and only then asks for its width.
     if (turn.requestedWidth !== null && turn.requestedWidth !== box.requestedWidth) {
       const centered = inColumn(box);
@@ -199,13 +199,133 @@ export function layoutTurns(
     box.height = height;
     if (!inColumn(box)) continue;
     for (const other of placed) {
-      if (other !== box && other.turnId !== null && other.y >= previousBottom - 1) other.y += delta;
+      if (other === box || other.turnId === null || !inColumn(other)) continue;
+      const otherIndex = turnIndex.get(other.turnId);
+      if (otherIndex !== undefined && otherIndex <= index) continue;
+      if (other.y >= previousBottom - 1) other.y += delta;
     }
   }
+
+  // Phase B1: stack missing history turns upward above the next existing in-column turn.
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!;
+    if (turn.id === THREAD_START_TURN_ID || boxFor(turn.id) !== undefined) continue;
+    const next = turns
+      .slice(index + 1)
+      .map((later) => (later.id === THREAD_START_TURN_ID ? undefined : boxFor(later.id)))
+      .find((later) => later !== undefined && inColumn(later));
+    if (next === undefined) continue;
+    const width = widthFor(turn.requestedWidth);
+    const height = turn.height + 2 * TURN_INSET_PX;
+    placed.push({
+      key: turn.id,
+      turnId: turn.id,
+      requestedWidth: turn.requestedWidth,
+      x: -width / 2,
+      y: next.y - height - TURN_GAP_PX,
+      width,
+      height,
+    });
+  }
+
+  // Phase B2: append remaining new real turns below the column.
+  for (const turn of turns) {
+    if (turn.id === THREAD_START_TURN_ID || boxFor(turn.id) !== undefined) continue;
+    const width = widthFor(turn.requestedWidth);
+    const height = turn.height + 2 * TURN_INSET_PX;
+    placed.push({
+      key: turn.id,
+      turnId: turn.id,
+      requestedWidth: turn.requestedWidth,
+      x: -width / 2,
+      y: landingY(placed, activeTurnIds),
+      width,
+      height,
+    });
+  }
+
+  // Phase C: guarantee in-column mounted real turns never overlap or leapfrog out of order.
+  let floor: number | null = null;
+  for (const turn of turns) {
+    if (turn.id === THREAD_START_TURN_ID) continue;
+    const box = boxFor(turn.id);
+    if (box === undefined || !inColumn(box)) continue;
+    if (floor !== null && box.y < floor) {
+      box.y = floor;
+    }
+    floor = box.y + box.height + TURN_GAP_PX;
+  }
+
+  // Phase D: seat a paginated `thread-start` prefix directly above the first real in-column turn.
+  const prefixTurn = turns.find((turn) => turn.id === THREAD_START_TURN_ID);
+  if (prefixTurn !== undefined) {
+    const height = prefixTurn.height + 2 * TURN_INSET_PX;
+    const firstReal = turns
+      .map((turn) => (turn.id === THREAD_START_TURN_ID ? undefined : boxFor(turn.id)))
+      .find((candidate) => candidate !== undefined && inColumn(candidate));
+    const existing = boxFor(THREAD_START_TURN_ID);
+    if (existing === undefined) {
+      const width = widthFor(prefixTurn.requestedWidth);
+      placed.push({
+        key: THREAD_START_TURN_ID,
+        turnId: THREAD_START_TURN_ID,
+        requestedWidth: prefixTurn.requestedWidth,
+        x: -width / 2,
+        y:
+          firstReal === undefined
+            ? landingY(placed, activeTurnIds)
+            : firstReal.y - height - TURN_GAP_PX,
+        width,
+        height,
+      });
+    } else {
+      if (
+        prefixTurn.requestedWidth !== null &&
+        prefixTurn.requestedWidth !== existing.requestedWidth
+      ) {
+        const centered = inColumn(existing);
+        existing.requestedWidth = prefixTurn.requestedWidth;
+        existing.width = widthFor(prefixTurn.requestedWidth);
+        if (centered) existing.x = -existing.width / 2;
+      }
+      existing.height = height;
+      if (inColumn(existing) && firstReal !== undefined) {
+        existing.y = firstReal.y - height - TURN_GAP_PX;
+      }
+    }
+  }
+
   followAnchors(placed);
   growHolders(placed);
   seatLabels(placed, before);
   return placed;
+}
+
+/**
+ * Rebuilds a clean spine for all mounted turns while moving anchored marks with them and stacking
+ * any unloaded older turn boxes neatly above the first mounted turn so nothing stale lingers below.
+ */
+export function resetTurnLayout(
+  boxes: ReadonlyArray<BoardBox>,
+  turns: ReadonlyArray<MeasuredTurn>,
+): ReadonlyArray<BoardBox> {
+  const mountedIds = new Set(turns.map((turn) => turn.id));
+  const marks = boxes.filter((box) => box.turnId === null);
+  const unloaded = boxes
+    .filter((box) => box.turnId !== null && !mountedIds.has(box.turnId))
+    .toSorted((left, right) => left.y - right.y);
+  const placed = layoutTurns(marks, turns);
+  const mountedBoxes = placed.filter((box) => box.turnId !== null);
+  let ceiling =
+    mountedBoxes.length === 0 ? 0 : Math.min(...mountedBoxes.map((box) => box.y)) - TURN_GAP_PX;
+  const repositionedUnloaded: BoardBox[] = [];
+  for (let index = unloaded.length - 1; index >= 0; index -= 1) {
+    const box = unloaded[index]!;
+    const y = ceiling - box.height;
+    repositionedUnloaded.push({ ...box, x: -box.width / 2, y });
+    ceiling = y - TURN_GAP_PX;
+  }
+  return [...placed, ...repositionedUnloaded];
 }
 
 /**

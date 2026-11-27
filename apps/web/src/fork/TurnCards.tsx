@@ -2,7 +2,7 @@ import { Fragment, type ReactNode, useLayoutEffect, useRef } from "react";
 
 import type { MessagesTimelineRow } from "../components/chat/MessagesTimeline.logic";
 import { useStableCallback } from "../hooks/useStableCallback";
-import type { TurnBoard } from "./turnBoard";
+import { THREAD_START_TURN_ID, type TurnBoard } from "./turnBoard";
 
 interface TurnGroup {
   readonly id: string;
@@ -11,7 +11,6 @@ interface TurnGroup {
   readonly title: string;
 }
 
-const THREAD_START_TURN_ID = "thread-start";
 const TURN_TITLE_LENGTH = 80;
 
 function requestedWidthOf(rows: ReadonlyArray<MessagesTimelineRow>) {
